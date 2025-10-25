@@ -1,3 +1,6 @@
+# main.py
+# This is the main FastAPI application file - it's like the "brain" of your API
+
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 import os
@@ -12,10 +15,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
-DATASETS_FOLDER = os.path.join(BASE_DIR, "datasets")  # Folder containing CSV files
+# Configuration - where your CSV files and thumbnails live
+# Get the directory where this file (main.py) is located
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATASETS_FOLDER = os.path.join(BASE_DIR, "datasets")  # Folder containing your CSV files
 THUMBNAILS_FOLDER = os.path.join(BASE_DIR, "thumbnails")  # Folder for thumbnail images
-CSV_CLEANER_PATH = os.path.join(BASE_DIR, "util", "csvCleaner.py")  # Path to CSV cleaner script
+CSV_CLEANER_PATH = os.path.join(BASE_DIR, "util", "csvCleaner.py")  # Path to your CSV cleaner script
 
 # In-memory storage - this dictionary will hold library names and their thumbnails
 # Structure: {"library_name": {"name": "housing", "csv_file": "housing.csv", "thumbnail": "/thumbnails/housing.png"}}
@@ -29,7 +34,7 @@ def scan_libraries():
     
     What it does:
     1. Scans the datasets folder for .csv files
-    2. Gets just the filenames
+    2. Gets just the filenames (no parsing!)
     3. Looks for matching thumbnail images
     4. Stores the info in library_catalog
     """
@@ -70,6 +75,16 @@ def scan_libraries():
 
 
 def find_thumbnail(library_name: str) -> str:
+    """
+    Looks for a thumbnail image that matches the library name.
+    Checks for common image extensions: .png, .jpg, .jpeg, .gif, .webp
+    
+    Args:
+        library_name: Name of the library (without extension)
+    
+    Returns:
+        Relative path to thumbnail or None if not found
+    """
     if not os.path.exists(THUMBNAILS_FOLDER):
         os.makedirs(THUMBNAILS_FOLDER)
         return None
@@ -119,8 +134,11 @@ async def root():
 @app.get("/libraries")
 async def list_libraries():
     """
-    GET /libraries -> Returns a list of all available libraries (CSV filenames) with their thumbnails.
-    eg:
+    GET /libraries
+    
+    Returns a list of all available libraries (CSV filenames) with their thumbnails.
+    
+    Example response:
     {
         "libraries": [
             {
@@ -136,7 +154,6 @@ async def list_libraries():
         ]
     }
     """
-    
     if not library_catalog:
         return {
             "libraries": [],
@@ -152,9 +169,12 @@ async def list_libraries():
 @app.get("/libraries/{library_name}")
 async def get_library_info(library_name: str):
     """
-    GET /libraries/{library_name} -> Returns information about a specific library.
+    GET /libraries/{library_name}
     
-    eg: GET /libraries/housing
+    Returns information about a specific library.
+    
+    Example: GET /libraries/housing
+    
     Args:
         library_name: Name of the library (CSV filename without .csv)
     
@@ -175,7 +195,9 @@ async def get_library_info(library_name: str):
 @app.post("/upload")
 async def upload_dataset(file: UploadFile = File(...)):
     """
-    POST /upload -> Uploads a CSV file, saves it to datasets folder, runs csvCleaner.py on it,
+    POST /upload
+    
+    Uploads a CSV file, saves it to datasets folder, runs csvCleaner.py on it,
     and returns the cleaned keys/output.
     
     How it works:
@@ -224,12 +246,14 @@ async def upload_dataset(file: UploadFile = File(...)):
         # Run the CSV cleaner script on the uploaded file
         # The script should output JSON to stdout
         try:
-            # Run csvCleaner.py with the file path as argument
+            # Run csvCleaner.py with just the filename
+            # We set cwd to datasets folder so csvCleaner.py can find the file
             result = subprocess.run(
-                ['python', CSV_CLEANER_PATH, file_path],
+                ['python', CSV_CLEANER_PATH, file.filename],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                cwd=DATASETS_FOLDER  # Run from datasets folder so csvCleaner.py finds the file
             )
             
             # Get the output from csvCleaner.py
@@ -294,5 +318,3 @@ async def rescan_libraries():
         "libraries_found": len(library_catalog),
         "libraries": list(library_catalog.values())
     }
-
-
