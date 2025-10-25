@@ -65,10 +65,25 @@ class CSVPreprocessor:
         print("Shape:", None if self.data is None else self.data.shape)
         print("Encoders:", self.encoders)
 
+    def split_features_labels(self, target_column: str):
+        """Splits cleaned data into X (features) and y (target) based on chosen column."""
+        if self.data is None:
+            raise ValueError("Data not cleaned yet. Run clean() before splitting.")
+
+        if target_column not in self.header:
+            raise ValueError(f"Column '{target_column}' not found in CSV headers: {self.header}")
+
+        target_index = self.header.index(target_column)
+        y = self.data[:, target_index]
+        X = np.delete(self.data, target_index, axis=1)
+
+        print(f"Target Column: '{target_column}' (Index {target_index})")
+        print(f"X Shape: {X.shape}, y Shape: {y.shape}")
+        return X, y
+
 
 # ======= TEST SECTION =======
 if __name__ == "__main__":
-    # Initialize the preprocessor with your CSV file
     processor = CSVPreprocessor("Housing.csv")
     clean_data = processor.clean()
 
@@ -79,3 +94,12 @@ if __name__ == "__main__":
     print(processor.get_mappings())
 
     processor.summary()
+
+    # Example: choose a target column for prediction (e.g., "Price")
+    X, y = processor.split_features_labels("Price")
+
+    print("\n=== Features (X) ===")
+    print(X[:5])  # show first 5 rows
+
+    print("\n=== Labels (y) ===")
+    print(y[:5])
