@@ -4,88 +4,60 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from sklearn.model_selection import train_test_split
+from csvCleaner import CSVPreprocessor
 
-# --- 1. Custom Dataset Class ---
-# This class converts our NumPy data into a PyTorch-compatible Dataset
+# --- 1. Custom Dataset Class (Unchanged) ---
 class NumpyDataset(Dataset):
     """
     Custom Dataset to load NumPy feature and label arrays.
     Converts data to PyTorch Tensors.
     """
     def __init__(self, features, labels):
-        # Convert numpy arrays to torch tensors
-        # Features are float32 (standard for model inputs)
         self.features = torch.tensor(features, dtype=torch.float32)
-        
-        # Labels for classification should be long (int64)
-        self.labels = torch.tensor(labels, dtype=torch.long)
+        # Squeeze labels to be 1D, which CrossEntropyLoss expects
+        self.labels = torch.tensor(labels.squeeze(), dtype=torch.long)
 
     def __len__(self):
-        # Returns the total number of samples
         return len(self.features)
 
     def __getitem__(self, idx):
-        # Returns one sample (feature, label) at the given index
         return self.features[idx], self.labels[idx]
 
-# --- 2. Dynamic Neural Network Class ---
+# --- 2. Dynamic Neural Network Class (Slightly modified) ---
 class DynamicANN(nn.Module):
     """
     A dynamically configured Artificial Neural Network.
-    
-    The input_features are set to (total_columns - 1)
-    The num_classes are set based on the unique values in the label column.
     """
     def __init__(self, input_features, num_classes):
         super(DynamicANN, self).__init__()
         
-        print(f"Initializing DynamicANN:")
-        print(f"  Input Features: {input_features}")
-        print(f"  Output Classes: {num_classes}")
+        self.input_features = input_features
+        self.num_classes = num_classes
         
-        # Define the network layers
         self.layer_stack = nn.Sequential(
-            nn.Linear(input_features, 64),
+            nn.Linear(self.input_features, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
-            # The output layer has 'num_classes' neurons
-            # We don't use a Softmax layer here because
-            # nn.CrossEntropyLoss (used in training) combines them.
-            nn.Linear(32, num_classes)
+            nn.Linear(32, self.num_classes)
         )
 
     def forward(self, x):
-        # Defines the forward pass
         return self.layer_stack(x)
 
     def train_model(self, train_loader, optimizer, criterion, device):
         """
         Runs one full epoch of training.
         """
-        # Set the model to training mode (enables dropout, etc.)
         self.train()
-        
         total_train_loss = 0
         for features, labels in train_loader:
-            # Move data to the selected device (e.g., GPU)
-            features = features.to(device)
-            # Labels need to be 1D and long for CrossEntropyLoss
-            labels = labels.squeeze().to(device) 
+            features, labels = features.to(device), labels.to(device)
 
-            # 1. Zero the gradients
             optimizer.zero_grad()
-            
-            # 2. Forward pass
             outputs = self(features)
-            
-            # 3. Calculate loss
-            loss = criterion(outputs, labels)
-            
-            # 4. Backward pass (backpropagation)
+            loss = criterion(outputs, labels) # labels are already 1D
             loss.backward()
-            
-            # 5. Update weights
             optimizer.step()
             
             total_train_loss += loss.item()
@@ -96,30 +68,20 @@ class DynamicANN(nn.Module):
         """
         Evaluates the model on the test dataset.
         """
-        # Set the model to evaluation mode (disables dropout, etc.)
         self.eval()
-        
         total_test_loss = 0
         correct_predictions = 0
         total_samples = 0
         
-        # We don't need to calculate gradients during testing
         with torch.no_grad():
             for features, labels in test_loader:
-                features = features.to(device)
-                labels = labels.squeeze().to(device)
+                features, labels = features.to(device), labels.to(device)
 
-                # Get model predictions
                 outputs = self(features)
-                
-                # Calculate loss
                 loss = criterion(outputs, labels)
                 total_test_loss += loss.item()
                 
-                # Calculate accuracy
-                # torch.max returns (values, indices) along a dimension
                 _, predicted_indices = torch.max(outputs.data, 1)
-                
                 total_samples += labels.size(0)
                 correct_predictions += (predicted_indices == labels).sum().item()
                 
@@ -127,100 +89,136 @@ class DynamicANN(nn.Module):
         accuracy = 100 * correct_predictions / total_samples
         return avg_loss, accuracy
 
+# --- 3. NEW: Workflow Manager Class ---
+class ANNWorkflow:
+    """
+    Manages the entire ANN training and evaluation workflow,
+    holding configuration like epochs and test_size.
+    """
+    def __init__(self, epochs, test_size, batch_size, learning_rate):
+        # Store configuration as instance variables
+        self.epochs = epochs
+        self.test_size = test_size  # The train-test split percentage (e.g., 0.2)
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        
+        self.model = None
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"Workflow initialized. Using device: {self.device}")
 
-# --- 3. Main execution block ---
-# This code only runs when the script is executed directly
+    def prepare_data(self, full_numpy_array, label_column_index):
+        """
+        Takes a full numpy array and a 'key' (column index) for the label.
+        Separates the array into features (everything else) and labels.
+        """
+        print(f"Preparing data. Using column {label_column_index} as the label.")
+        
+        # Ensure label_column_index is valid
+        if label_column_index < 0: # Handle negative indexing
+            label_column_index = full_numpy_array.shape[1] + label_column_index
+            
+        if not 0 <= label_column_index < full_numpy_array.shape[1]:
+            raise ValueError("label_column_index is out of bounds.")
+            
+        # Select the label column
+        # Use reshape to ensure labels are (n_samples, 1)
+        labels = full_numpy_array[:, label_column_index].reshape(-1, 1)
+        
+        # Select all columns *except* the label column
+        features = np.delete(full_numpy_array, label_column_index, axis=1)
+        
+        print(f"  Features shape: {features.shape}")
+        print(f"  Labels shape:   {labels.shape}")
+        
+        return features, labels
+
+    def run(self, full_numpy_array, label_column_index):
+        """
+        Executes the full workflow:
+        1. Prepare data
+        2. Split data
+        3. Create DataLoaders
+        4. Initialize model
+        5. Run training and evaluation loop
+        """
+        
+        # --- 1. Prepare Data ---
+        features, labels = self.prepare_data(full_numpy_array, label_column_index)
+        
+        # --- 2. Get Dynamic Parameters ---
+        input_features = features.shape[1]
+        num_classes = len(np.unique(labels))
+        
+        # --- 3. Data Splitting ---
+        X_train, X_test, y_train, y_test = train_test_split(
+            features, labels, 
+            test_size=self.test_size,  # Use instance variable
+            random_state=42
+        )
+        print(f"\nData split ({int((1-self.test_size)*100)}% / {int(self.test_size*100)}%):")
+        print(f"  Training samples:   {X_train.shape[0]}")
+        print(f"  Testing samples:    {X_test.shape[0]}")
+
+        # --- 4. Create Datasets and DataLoaders ---
+        train_dataset = NumpyDataset(X_train, y_train)
+        test_dataset = NumpyDataset(X_test, y_test)
+        
+        train_loader = DataLoader(
+            dataset=train_dataset,
+            batch_size=self.batch_size, # Use instance variable
+            shuffle=True
+        )
+        test_loader = DataLoader(
+            dataset=test_dataset,
+            batch_size=self.batch_size, # Use instance variable
+            shuffle=False
+        )
+        
+        # --- 5. Initialize Model and Training ---
+        print(f"\nInitializing DynamicANN:")
+        print(f"  Input Features: {input_features}")
+        print(f"  Output Classes: {num_classes}")
+        
+        self.model = DynamicANN(input_features, num_classes).to(self.device)
+        
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+
+        # --- 6. Training and Testing Loop ---
+        print("\nStarting model training...")
+        for epoch in range(self.epochs): # Use instance variable
+            
+            train_loss = self.model.train_model(train_loader, optimizer, criterion, self.device)
+            test_loss, test_accuracy = self.model.test_model(test_loader, criterion, self.device)
+            
+            print(f"Epoch [{epoch+1:02d}/{self.epochs}] | "
+                  f"Train Loss: {train_loss:.4f} | "
+                  f"Test Loss: {test_loss:.4f} | "
+                  f"Test Acc: {test_accuracy:.2f}%")
+
+        print("\nTraining finished.")
+
+# --- 4. Main execution block ---
 if __name__ == "__main__":
     
-    # --- Hyperparameters ---
-    BATCH_SIZE = 32
-    EPOCHS = 10
-    LEARNING_RATE = 0.001
-
     # --- A. Data Generation ---
-    print("Generating random dataset...")
-    np.random.seed(42) # for reproducible results
+    processor = CSVPreprocessor("../datasets/housing.csv")
+    clean_data = processor.clean()
+    print(clean_data)
     
-    # [1200.  2.  0.  0.]
-    # Col 1: 1000-2000
-    feature1 = np.random.uniform(1000, 2000, (1000, 1))
-    # Col 2: 1-3
-    feature2 = np.random.randint(1, 4, (1000, 1))
-    # Col 3: 0 or 1
-    feature3 = np.random.randint(0, 2, (1000, 1))
+    # --- B. Initialize and Run Workflow ---
     
-    # Col 4: Label (0, 1, or 2) - This will be our target
-    labels = np.random.randint(0, 3, (1000, 1))
-    
-    # Combine features
-    features = np.hstack((feature1, feature2, feature3))
-    
-    print(f"Features shape: {features.shape}")
-    print(f"Labels shape:   {labels.shape}")
-
-    # --- B. Get Dynamic Parameters ---
-    # Input features = number of columns in the feature array
-    INPUT_FEATURES = features.shape[1]
-    
-    # Number of classes = number of unique values in the label array
-    NUM_CLASSES = len(np.unique(labels))
-
-    # --- C. Data Splitting ---
-    # Split data into 80% training and 20% testing
-    X_train, X_test, y_train, y_test = train_test_split(
-        features, labels, test_size=0.2, random_state=42
+    # Configure the workflow with instance variables
+    workflow = ANNWorkflow(
+        epochs=40, 
+        test_size=0.2,   # 20% test split
+        batch_size=32, 
+        learning_rate=0.001
     )
     
-    print(f"\nData split:")
-    print(f"  Training samples:   {X_train.shape[0]}")
-    print(f"  Testing samples:    {X_test.shape[0]}")
-
-    # --- D. Create Datasets and DataLoaders ---
-    # Create Dataset instances
-    train_dataset = NumpyDataset(X_train, y_train)
-    test_dataset = NumpyDataset(X_test, y_test)
-    
-    # Create DataLoader instances
-    train_loader = DataLoader(
-        dataset=train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True  # Shuffle training data
+    # Run the workflow.
+    # Tell it that our label is in column index 2
+    workflow.run(
+        full_numpy_array=clean_data, 
+        label_column_index=2
     )
-    
-    test_loader = DataLoader(
-        dataset=test_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False # No need to shuffle test data
-    )
-
-    # --- E. Initialize Model and Training Components ---
-    # Set device to GPU (cuda) if available, otherwise CPU
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"\nUsing device: {device}")
-
-    # Initialize the model and move it to the device
-    model = DynamicANN(INPUT_FEATURES, NUM_CLASSES).to(device)
-    
-    # Loss function (CrossEntropy for multi-class classification)
-    criterion = nn.CrossEntropyLoss()
-    
-    # Optimizer (Adam is a good default)
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-
-    # --- F. Training and Testing Loop ---
-    print("\nStarting model training...")
-    for epoch in range(EPOCHS):
-        
-        # Run training for one epoch
-        train_loss = model.train_model(train_loader, optimizer, criterion, device)
-        
-        # Run testing
-        test_loss, test_accuracy = model.test_model(test_loader, criterion, device)
-        
-        # Print epoch results
-        print(f"Epoch [{epoch+1:02d}/{EPOCHS}] | "
-              f"Train Loss: {train_loss:.4f} | "
-              f"Test Loss: {test_loss:.4f} | "
-              f"Test Acc: {test_accuracy:.2f}%")
-
-    print("\nTraining finished.")
