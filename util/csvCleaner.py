@@ -1,105 +1,99 @@
 import csv
 import numpy as np
 
-class CSVPreprocessor:
-    """Preprocesses a CSV file into numeric data ready for neural networks."""
-
+class CSVCleaner:
     def __init__(self, filename: str):
+        """Loads and cleans a CSV file"""
         self.filename = filename
+        self.data = []
         self.header = []
         self.encoders = {}
-        self.data = None
-    
-    def _is_numeric_column(self, column):
-        for val in column:
-            try:
-                float(val)
-            except ValueError:
-                return False
-        return True
 
-    def _encode_categorical_column(self, column_name, column):
-        mapping = {}
-        encoded = []
-        next_code = 0.0
-        for val in column:
-            if val not in mapping:
-                mapping[val] = next_code
-                next_code += 1.0
-            encoded.append(mapping[val])
-        self.encoders[column_name] = mapping
-        return encoded
-
-    def clean(self):
-        with open(self.filename, "r", newline="", encoding="utf-8") as f:
-            reader = csv.reader(f)
+    def load_csv(self) -> None:
+        """Loads CSV data and converts headers to lowercase"""
+        with open(self.filename, "r", newline="") as file:
+            reader = csv.reader(file)
             self.header = next(reader)
-            rows = [
-                row for row in reader
-                if all(v.strip() != "" and v.lower() != "nan" for v in row)
-            ]
+            # Normalize headers to lowercase
+            self.header = [col.strip().lower() for col in self.header]
+            for row in reader:
+                # Skip empty rows
+                if any(cell.strip() for cell in row):
+                    self.data.append(row)
 
-        columns = list(zip(*rows))
-        cleaned_columns = []
+    def encode_data(self) -> np.ndarray:
+        """Converts categorical columns into numeric values"""
+        numeric_data = []
+        cols = len(self.header)
 
-        for i, col in enumerate(columns):
-            col_name = self.header[i]
-            if self._is_numeric_column(col):
-                cleaned_columns.append([float(v) for v in col])
-            else:
-                cleaned_columns.append(self._encode_categorical_column(col_name, col))
+        # Determine which columns are numeric and which are categorical
+        is_numeric = [True] * cols
+        for row in self.data:
+            for i in range(cols):
+                try:
+                    float(row[i])
+                except ValueError:
+                    is_numeric[i] = False
 
-        cleaned_data = [list(row) for row in zip(*cleaned_columns)]
-        self.data = np.array(cleaned_data, dtype=float)
-        return self.data
+        # Create encoders for categorical columns
+        for i in range(cols):
+            if not is_numeric[i]:
+                col_name = self.header[i]
+                self.encoders[col_name] = {}
+                next_code = 0.0
+                for row in self.data:
+                    value = row[i].strip().lower()
+                    if value not in self.encoders[col_name]:
+                        self.encoders[col_name][value] = next_code
+                        next_code += 1.0
 
-    def get_mappings(self):
-        return self.encoders
+        # Build numeric data array
+        for row in self.data:
+            new_row = []
+            for i in range(cols):
+                value = row[i].strip().lower()
+                if is_numeric[i]:
+                    new_row.append(float(value))
+                else:
+                    col_name = self.header[i]
+                    new_row.append(self.encoders[col_name][value])
+            numeric_data.append(new_row)
 
-    def get_header(self):
-        return self.header
-
-    def summary(self):
-        print("CSV File:", self.filename)
-        print("Columns:", self.header)
-        print("Shape:", None if self.data is None else self.data.shape)
-        print("Encoders:", self.encoders)
+        return np.array(numeric_data, dtype=float)
 
     def split_features_labels(self, target_column: str):
-        """Splits cleaned data into X (features) and y (target) based on chosen column."""
-        if self.data is None:
-            raise ValueError("Data not cleaned yet. Run clean() before splitting.")
-
+        """Splits dataset into X (features) and y (labels)"""
+        target_column = target_column.strip().lower()  # normalize input
         if target_column not in self.header:
-            raise ValueError(f"Column '{target_column}' not found in CSV headers: {self.header}")
+            raise ValueError(
+                f"Column '{target_column}' not found in CSV headers: {self.header}"
+            )
 
         target_index = self.header.index(target_column)
-        y = self.data[:, target_index]
-        X = np.delete(self.data, target_index, axis=1)
-
-        print(f"Target Column: '{target_column}' (Index {target_index})")
-        print(f"X Shape: {X.shape}, y Shape: {y.shape}")
+        numeric_data = self.encode_data()
+        y = numeric_data[:, target_index]
+        X = np.delete(numeric_data, target_index, axis=1)
         return X, y
 
 
-# ======= TEST SECTION =======
-if __name__ == "__main__":
-    processor = CSVPreprocessor("Housing.csv")
-    clean_data = processor.clean()
+def main():
+    cleaner = CSVCleaner("Housing.csv")
+    cleaner.load_csv()
+    print(f"CSV File: {cleaner.filename}")
+    print(f"Columns: {cleaner.header}")
 
-    print("=== Cleaned Numeric Data ===")
-    print(clean_data)
+    numeric_data = cleaner.encode_data()
+    print("\n=== Cleaned Numeric Data ===")
+    print(numeric_data)
 
     print("\n=== Encoded Value Mappings ===")
-    print(processor.get_mappings())
+    print(cleaner.encoders)
 
-    processor.summary()
+    # Automatically use lowercase 'price' as target
+    X, y = cleaner.split_features_labels("price")
+    print("\n=== Features (X) Shape ===", X.shape)
+    print("=== Labels (y) Shape ===", y.shape)
 
-    # Example: choose a target column for prediction (e.g., "Price")
-    X, y = processor.split_features_labels("Price")
 
-    print("\n=== Features (X) ===")
-    print(X[:5])  # show first 5 rows
-
-    print("\n=== Labels (y) ===")
-    print(y[:5])
+if __name__ == "__main__":
+    main()
