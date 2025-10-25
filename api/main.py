@@ -1,9 +1,8 @@
-# main.py
-# This is the main FastAPI application file - it's like the "brain" of your API
-
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 import os
+import subprocess
+import json
 from typing import List, Dict, Any
 
 # Create the FastAPI app instance - this is your API!
@@ -13,11 +12,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configuration - where your CSV files and thumbnails live
-# Get the directory where this file (main.py) is located
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATASETS_FOLDER = os.path.join(BASE_DIR, "datasets")  # Folder containing your CSV files
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
+DATASETS_FOLDER = os.path.join(BASE_DIR, "datasets")  # Folder containing CSV files
 THUMBNAILS_FOLDER = os.path.join(BASE_DIR, "thumbnails")  # Folder for thumbnail images
+CSV_CLEANER_PATH = os.path.join(BASE_DIR, "util", "csvCleaner.py")  # Path to CSV cleaner script
 
 # In-memory storage - this dictionary will hold library names and their thumbnails
 # Structure: {"library_name": {"name": "housing", "csv_file": "housing.csv", "thumbnail": "/thumbnails/housing.png"}}
@@ -31,7 +29,7 @@ def scan_libraries():
     
     What it does:
     1. Scans the datasets folder for .csv files
-    2. Gets just the filenames (no parsing!)
+    2. Gets just the filenames
     3. Looks for matching thumbnail images
     4. Stores the info in library_catalog
     """
@@ -72,16 +70,6 @@ def scan_libraries():
 
 
 def find_thumbnail(library_name: str) -> str:
-    """
-    Looks for a thumbnail image that matches the library name.
-    Checks for common image extensions: .png, .jpg, .jpeg, .gif, .webp
-    
-    Args:
-        library_name: Name of the library (without extension)
-    
-    Returns:
-        Relative path to thumbnail or None if not found
-    """
     if not os.path.exists(THUMBNAILS_FOLDER):
         os.makedirs(THUMBNAILS_FOLDER)
         return None
@@ -122,6 +110,7 @@ async def root():
         "endpoints": {
             "list_libraries": "/libraries",
             "get_library_info": "/libraries/{library_name}",
+            "upload_dataset": "/upload",
             "rescan": "/rescan"
         }
     }
@@ -130,11 +119,8 @@ async def root():
 @app.get("/libraries")
 async def list_libraries():
     """
-    GET /libraries
-    
-    Returns a list of all available libraries (CSV filenames) with their thumbnails.
-    
-    Example response:
+    GET /libraries -> Returns a list of all available libraries (CSV filenames) with their thumbnails.
+    eg:
     {
         "libraries": [
             {
@@ -150,6 +136,7 @@ async def list_libraries():
         ]
     }
     """
+    
     if not library_catalog:
         return {
             "libraries": [],
@@ -165,12 +152,9 @@ async def list_libraries():
 @app.get("/libraries/{library_name}")
 async def get_library_info(library_name: str):
     """
-    GET /libraries/{library_name}
+    GET /libraries/{library_name} -> Returns information about a specific library.
     
-    Returns information about a specific library.
-    
-    Example: GET /libraries/housing
-    
+    eg: GET /libraries/housing
     Args:
         library_name: Name of the library (CSV filename without .csv)
     
@@ -186,6 +170,112 @@ async def get_library_info(library_name: str):
     
     # Return the library info
     return library_catalog[library_name]
+
+
+@app.post("/upload")
+async def upload_dataset(file: UploadFile = File(...)):
+    """
+    POST /upload -> Uploads a CSV file, saves it to datasets folder, runs csvCleaner.py on it,
+    and returns the cleaned keys/output.
+    
+    How it works:
+    1. Receives CSV file from frontend
+    2. Saves it to datasets/ folder
+    3. Runs util/csvCleaner.py on the file
+    4. Returns the output (keys) back to frontend
+    
+    Example usage (from frontend):
+    ```javascript
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    fetch('http://localhost:8000/upload', {
+      method: 'POST',
+      body: formData
+    })
+    .then(response => response.json())
+    .then(data => console.log(data));
+    ```
+    
+    Args:
+        file: The CSV file uploaded from frontend
+    
+    Returns:
+        JSON with cleaned keys and file info
+    """
+    # Validate that it's a CSV file
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV files are allowed. Please upload a .csv file."
+        )
+    
+    try:
+        # Save the uploaded file to datasets folder
+        file_path = os.path.join(DATASETS_FOLDER, file.filename)
+        
+        # Read and write the file
+        contents = await file.read()
+        with open(file_path, 'wb') as f:
+            f.write(contents)
+        
+        print(f"✓ Saved file: {file.filename} to {DATASETS_FOLDER}")
+        
+        # Run the CSV cleaner script on the uploaded file
+        # The script should output JSON to stdout
+        try:
+            # Run csvCleaner.py with the file path as argument
+            result = subprocess.run(
+                ['python', CSV_CLEANER_PATH, file_path],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            # Get the output from csvCleaner.py
+            cleaner_output = result.stdout.strip()
+            
+            print(f"✓ CSV Cleaner output: {cleaner_output}")
+            
+            # Try to parse the output as JSON (if your csvCleaner.py outputs JSON)
+            try:
+                cleaned_data = json.loads(cleaner_output)
+            except json.JSONDecodeError:
+                # If it's not JSON, return as plain text
+                cleaned_data = {"output": cleaner_output}
+            
+            # Rescan libraries to include the new file
+            scan_libraries()
+            
+            # Return success response with cleaned data
+            return {
+                "success": True,
+                "message": f"File '{file.filename}' uploaded and processed successfully",
+                "filename": file.filename,
+                "file_path": file_path,
+                "cleaned_data": cleaned_data
+            }
+            
+        except subprocess.CalledProcessError as e:
+            # CSV cleaner script failed
+            raise HTTPException(
+                status_code=500,
+                detail=f"CSV cleaner script failed: {e.stderr}"
+            )
+        
+        except FileNotFoundError:
+            # csvCleaner.py not found
+            raise HTTPException(
+                status_code=500,
+                detail=f"CSV cleaner script not found at: {CSV_CLEANER_PATH}"
+            )
+    
+    except Exception as e:
+        # General error handling
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing file: {str(e)}"
+        )
 
 
 @app.post("/rescan")
@@ -206,47 +296,3 @@ async def rescan_libraries():
     }
 
 
-
-
-
-
-
-
-
-# ==================== HOW TO RUN ====================
-"""
-1. Install dependencies:
-   pip install fastapi uvicorn
-
-2. Your folder structure:
-   your_project/
-   ├── api/
-   │   └── main.py (this file)
-   ├── datasets/ (put your CSV files here)
-   │   ├── housing.csv
-   │   └── xxxx.csv
-   └── thumbnails/ (put matching images here)
-       ├── housing.png
-       └── xxxx.jpg
-
-3. Run the server (from your_project/ directory):
-    uvicorn api.main:app --reload --host 0.0.0.0 --port 80
-    
-4. Test the API:
-   - Open browser: http://localhost:8000
-   - List libraries: http://localhost:8000/libraries
-   - Get specific library: http://localhost:8000/libraries/housing
-   - Interactive docs: http://localhost:8000/docs (automatically generated!)
-
-5. What you'll get:
-   GET /libraries returns:
-   {
-     "libraries": [
-       {
-         "name": "housing",
-         "csv_file": "housing.csv", 
-         "thumbnail": "/thumbnails/housing.png"
-       }
-     ]
-   }
-"""
