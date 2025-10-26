@@ -1,8 +1,7 @@
-# main.py
-# This is the main FastAPI application file - it's like the "brain" of your API
-
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles  # Add this import
 import os
 import subprocess
 import json
@@ -15,12 +14,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configuration - where your CSV files and thumbnails live
-# Get the directory where this file (main.py) is located
+origins = [
+    "http://100.72.88.122:3000",
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/thumbnails", StaticFiles(directory="thumbnails"), name="thumbnails")
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATASETS_FOLDER = os.path.join(BASE_DIR, "datasets")  # Folder containing your CSV files
+DATASETS_FOLDER = os.path.join(BASE_DIR, "datasets")  # Folder containing CSV files
 THUMBNAILS_FOLDER = os.path.join(BASE_DIR, "thumbnails")  # Folder for thumbnail images
-CSV_CLEANER_PATH = os.path.join(BASE_DIR, "util", "csvCleaner.py")  # Path to your CSV cleaner script
+CSV_CLEANER_PATH = os.path.join(BASE_DIR, "util", "csvCleaner.py")  # Path to CSV cleaner script
 
 # In-memory storage - this dictionary will hold library names and their thumbnails
 # Structure: {"library_name": {"name": "housing", "csv_file": "housing.csv", "thumbnail": "/thumbnails/housing.png"}}
