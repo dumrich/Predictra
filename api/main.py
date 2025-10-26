@@ -342,42 +342,50 @@ async def analyze_dataset(dataset_name: str):
         )
 
 @app.post("/train")
-async def train_model(num_epochs: int, test_size: float, predict_field: str):
-    """
-    POST /train
-    
-    Trains a machine learning model on a dataset.
-    
-    Args:
-        dataset_name: Name of the dataset to train on
-        num_epochs: Number of training epochs
-        test_size: Fraction of data to use for testing (0.0 to 1.0)
-        predict_field: Name of the field to predict
-    
-    Returns:
-        JSON object with training results
-    """
-    print("="*50)
-    print("Training Model Request Received:")
-    print(f"  Number of Epochs: {num_epochs}")
-    print(f"  Test Size: {test_size}")
-    print(f"  Predict Field: {predict_field}")
-    print("="*50)
-    
-    """
-    {'mainroad': {'yes': 0.0, 'no': 1.0}, 'guestroom': {'no': 0.0, 'yes': 1.0}, 'basement': {'no': 0.0, 'yes': 1.0}, 'hotwaterheating': {'no': 0.0, 'yes': 1.0}, 'airconditioning': {'yes': 0.0, 'no': 1.0}, 'prefarea': {'yes': 0.0, 'no': 1.0}, 'furnishingstatus': {'furnished': 0.0, 'semi-furnished': 1.0, 'unfurnished': 2.0}}
-    """
-    
-    return {
-        "success": True,
-        "message": "Model training skeleton executed",
-        "received_parameters": {
+async def train_model(dataset_name: str, num_epochs: int, test_size: float, predict_field: str):
+  
+    try: 
+        # Construct the full path to the CSV file
+        csv_filename = f"../datasets/{dataset_name}.csv"
+        file_path = os.path.join(DATASETS_FOLDER, csv_filename)
+        
+        # Check if the file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dataset '{dataset_name}' not found. Available datasets: {list(library_catalog.keys())}"
+            )
+        
+        # Create CSVCleaner instance and load the CSV
+        cleaner = CSVCleaner(file_path)
+        cleaner.load_csv()
+        
+        # Generate encoders by calling encode_data
+        cleaner.encode_data()
+        
+        # Return the encoders 
+        return {
+            "success": True,
+            "dataset": dataset_name,
+            "encoders": cleaner.encoders,
+            "total_encoders": len(cleaner.encoders),
+            "message": "Model training skeleton executed",
+            
+            "received_parameters": {
             "num_epochs": num_epochs,
             "test_size": test_size,
             "predict_field": predict_field
+            }
         }
-    }
 
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error analyzing dataset: {str(e)}"
+        )
+    
 
 @app.post("/rescan")
 async def rescan_libraries():
