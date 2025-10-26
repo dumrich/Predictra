@@ -8,7 +8,7 @@ import json
 import csv
 import asyncio
 from typing import List, Dict, Any
-from util.csvCleaner import CSVCleaner
+import sys
 
 # Create the FastAPI app instance - this is your API!
 app = FastAPI(
@@ -30,12 +30,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/thumbnails", StaticFiles(directory="thumbnails"), name="thumbnails")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASETS_FOLDER = os.path.join(BASE_DIR, "datasets")  # Folder containing CSV files
 THUMBNAILS_FOLDER = os.path.join(BASE_DIR, "thumbnails")  # Folder for thumbnail images
-CSV_CLEANER_PATH = os.path.join(BASE_DIR, "util", "csvCleaner.py")  # Path to CSV cleaner script
+
+
+sys.path.append(BASE_DIR)
+
+app.mount("/thumbnails", StaticFiles(directory=THUMBNAILS_FOLDER), name="thumbnails")
+from util.csvCleaner import CSVCleaner
+
 
 # In-memory storage - this dictionary will hold library names and their thumbnails
 # Structure: {"library_name": {"name": "housing", "csv_file": "housing.csv", "thumbnail": "/thumbnails/housing.png"}}
@@ -261,30 +266,15 @@ async def upload_dataset(file: UploadFile = File(...)):
         
         print(f"✓ Saved file: {file.filename} to {DATASETS_FOLDER}")
         
-        try:
-            scan_libraries()
-            # Return success response with cleaned data
-            return {
-                "success": True,
-                "message": f"File '{file.filename}' uploaded and processed successfully",
-                "filename": file.filename,
-                "file_path": file_path,
-            }
+        scan_libraries()
+        # Return success response with cleaned data
+        return {
+            "success": True,
+            "message": f"File '{file.filename}' uploaded and processed successfully",
+            "filename": file.filename,
+            "file_path": file_path,
+        }
             
-        except subprocess.CalledProcessError as e:
-            # CSV cleaner script failed
-            raise HTTPException(
-                status_code=500,
-                detail=f"CSV cleaner script failed: {e.stderr}"
-            )
-        
-        except FileNotFoundError:
-            # csvCleaner.py not found
-            raise HTTPException(
-                status_code=500,
-                detail=f"CSV cleaner script not found at: {CSV_CLEANER_PATH}"
-            )
-    
     except Exception as e:
         # General error handling
         raise HTTPException(
