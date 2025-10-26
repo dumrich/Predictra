@@ -311,7 +311,7 @@ async def analyze_dataset(dataset_name: str):
     try:
         
         # Construct the full path to the CSV file
-        csv_filename = f"{dataset_name}.csv"
+        csv_filename = f"../datasets/{dataset_name}.csv"
         file_path = os.path.join(DATASETS_FOLDER, csv_filename)
         
         # Check if the file exists
@@ -339,6 +339,9 @@ async def analyze_dataset(dataset_name: str):
             status_code=500,
             detail=f"Error analyzing dataset: {str(e)}"
         )
+
+# @app.post("/train")
+# async def train_model(dataset_jame)
 
 @app.post("/rescan")
 async def rescan_libraries():
