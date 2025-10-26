@@ -6,6 +6,7 @@ import os
 import subprocess
 import json
 from typing import List, Dict, Any
+from util.csvCleaner import CSVCleaner
 
 # Create the FastAPI app instance - this is your API!
 app = FastAPI(
@@ -138,6 +139,7 @@ async def root():
             "list_libraries": "/libraries",
             "get_library_info": "/libraries/{library_name}",
             "upload_dataset": "/upload",
+            "analyze_dataset": "/analyze",
             "rescan": "/rescan"
         }
     }
@@ -255,41 +257,14 @@ async def upload_dataset(file: UploadFile = File(...)):
         
         print(f"✓ Saved file: {file.filename} to {DATASETS_FOLDER}")
         
-        # Run the CSV cleaner script on the uploaded file
-        # The script should output JSON to stdout
         try:
-            # Run csvCleaner.py with just the filename
-            # We set cwd to datasets folder so csvCleaner.py can find the file
-            result = subprocess.run(
-                ['python', CSV_CLEANER_PATH, file.filename],
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=DATASETS_FOLDER  # Run from datasets folder so csvCleaner.py finds the file
-            )
-            
-            # Get the output from csvCleaner.py
-            cleaner_output = result.stdout.strip()
-            
-            print(f"✓ CSV Cleaner output: {cleaner_output}")
-            
-            # Try to parse the output as JSON (if your csvCleaner.py outputs JSON)
-            try:
-                cleaned_data = json.loads(cleaner_output)
-            except json.JSONDecodeError:
-                # If it's not JSON, return as plain text
-                cleaned_data = {"output": cleaner_output}
-            
-            # Rescan libraries to include the new file
             scan_libraries()
-            
             # Return success response with cleaned data
             return {
                 "success": True,
                 "message": f"File '{file.filename}' uploaded and processed successfully",
                 "filename": file.filename,
                 "file_path": file_path,
-                "cleaned_data": cleaned_data
             }
             
         except subprocess.CalledProcessError as e:
@@ -312,6 +287,58 @@ async def upload_dataset(file: UploadFile = File(...)):
             status_code=500,
             detail=f"Error processing file: {str(e)}"
         )
+
+@app.get("/analyze")
+async def analyze_dataset(dataset_name: str):
+    """
+    GET /analyze
+    
+    Analyzes a CSV dataset by running it through the CSV cleaner
+    and returns the headers of the cleaned dataset.
+    
+    Args:
+        dataset_name: Name of the dataset (CSV filename without .csv extension)
+    
+    Returns:
+        JSON object with the cleaned headers
+    
+    Example request:
+    GET /analyze?dataset_name=housing
+    """
+    try:
+        
+        # Construct the full path to the CSV file
+        csv_filename = f"../datasets/{dataset_name}.csv"
+        file_path = os.path.join(DATASETS_FOLDER, csv_filename)
+        
+        # Check if the file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dataset '{dataset_name}' not found. Available datasets: {list(library_catalog.keys())}"
+            )
+        
+        # Create CSVCleaner instance and load the CSV
+        cleaner = CSVCleaner(file_path)
+        cleaner.load_csv()
+        # Return the headers
+        return {
+            "success": True,
+            "dataset": dataset_name,
+            "headers": cleaner.header,
+            "total_headers": len(cleaner.header)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error analyzing dataset: {str(e)}"
+        )
+
+@app.post("/train")
+async def train_model(datas)
 
 
 @app.post("/rescan")
