@@ -337,10 +337,6 @@ async def analyze_dataset(dataset_name: str):
             detail=f"Error analyzing dataset: {str(e)}"
         )
 
-@app.post("/train")
-async def train_model(datas)
-
-
 @app.post("/rescan")
 async def rescan_libraries():
     """
