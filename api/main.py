@@ -142,6 +142,7 @@ async def root():
             "get_library_info": "/libraries/{library_name}",
             "upload_dataset": "/upload",
             "analyze_dataset": "/analyze",
+            "train_model": "/train",
             "rescan": "/rescan",
             "stream_csv": "/stream/{library_name}"
         }
@@ -340,8 +341,39 @@ async def analyze_dataset(dataset_name: str):
             detail=f"Error analyzing dataset: {str(e)}"
         )
 
-# @app.post("/train")
-# async def train_model(dataset_jame)
+@app.post("/train")
+async def train_model(num_epochs: int, test_size: float, predict_field: str):
+    """
+    POST /train
+    
+    Trains a machine learning model on a dataset.
+    
+    Args:
+        dataset_name: Name of the dataset to train on
+        num_epochs: Number of training epochs
+        test_size: Fraction of data to use for testing (0.0 to 1.0)
+        predict_field: Name of the field to predict
+    
+    Returns:
+        JSON object with training results
+    """
+    print("="*50)
+    print("Training Model Request Received:")
+    print(f"  Number of Epochs: {num_epochs}")
+    print(f"  Test Size: {test_size}")
+    print(f"  Predict Field: {predict_field}")
+    print("="*50)
+    
+    return {
+        "success": True,
+        "message": "Model training skeleton executed",
+        "received_parameters": {
+            "num_epochs": num_epochs,
+            "test_size": test_size,
+            "predict_field": predict_field
+        }
+    }
+
 
 @app.post("/rescan")
 async def rescan_libraries():
