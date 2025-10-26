@@ -1,7 +1,7 @@
 // Configuration for the FastAPI backend
 export const API_CONFIG = {
   // Point to your FastAPI server (running on port 80)
-  BASE_URL: "http://100.109.58.81:80",
+  BASE_URL: "http://localhost:8000",
   
   // API endpoints
   ENDPOINTS: {
@@ -9,7 +9,10 @@ export const API_CONFIG = {
     UPLOAD: "/upload",
     THUMBNAILS: "/thumbnails",
     ANALYZE: "/analyze",
-    TRAIN: "/train"
+    TRAIN: "/train",
+    PREDICT: "/predict",
+    MODEL_INFO: "/model-info",
+    DATASET_DISTRIBUTION: "/dataset-distribution"
   }
 };
 

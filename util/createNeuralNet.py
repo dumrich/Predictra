@@ -4,25 +4,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, Dataset # Correctly using TensorDataset
 import numpy as np
 from sklearn.model_selection import train_test_split
-from csvCleaner import CSVCleaner
+from util.csvCleaner import CSVCleaner
 from sklearn.preprocessing import StandardScaler
-
-# --- 1. Custom Dataset Class (Unchanged) ---
-class NumpyDataset(Dataset):
-    """
-    Custom Dataset to load NumPy feature and label arrays.
-    Converts data to PyTorch Tensors.
-    """
-    def __init__(self, features, labels):
-        self.features = torch.tensor(features, dtype=torch.float32)
-        # Squeeze labels to be 1D, which CrossEntropyLoss expects
-        self.labels = torch.tensor(labels.squeeze(), dtype=torch.long)
-
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        return self.features[idx], self.labels[idx]
+import asyncio
 
 # --- 2. Dynamic Neural Network Class (Slightly modified) ---
 class DynamicANN(nn.Module):
@@ -96,6 +80,88 @@ class DynamicANN(nn.Module):
         
         print("\nTraining Finished.")
         
+        # Return the loss history
+        return train_losses, test_losses
+
+    async def train_model_with_websocket(self, optimizer, train_loader, test_loader, num_epochs=100, broadcast_callback=None, broadcast_interval=2):
+        """
+        Runs the full training and testing loop for num_epochs with WebSocket broadcasting.
+        Sends average loss data every 'broadcast_interval' epochs to reduce WebSocket traffic.
+        """
+        # Use the provided callback or create a fallback
+        async def broadcast_loss_internal(epoch, train_loss, test_loss):
+            if broadcast_callback:
+                await broadcast_callback(epoch, train_loss, test_loss, is_averaged=True, interval_size=broadcast_interval)
+            else:
+                print(f"Epoch {epoch}: Averaged Train Loss = {train_loss:.4f}, Test Loss = {test_loss:.4f} (over {broadcast_interval} epochs)")
+
+        # To store loss history for plotting
+        train_losses = []
+        test_losses = []
+
+        # Accumulator for averaging losses over intervals
+        train_loss_accumulator = []
+        test_loss_accumulator = []
+
+        # --- Main training loop ---
+        for epoch in range(num_epochs):
+
+            # --- Training Step ---
+            self.train() # Set model to training mode
+            total_train_loss = 0
+
+            # This loop iterates over the batches
+            for features, labels in train_loader:
+                optimizer.zero_grad()
+                outputs = self.forward(features)
+
+                # Ensure output and label shapes are compatible
+                # For MSELoss, they should both be something like [batch_size, 1]
+                loss = self.loss_func(outputs, labels)
+
+                loss.backward()
+                optimizer.step()
+                total_train_loss += loss.item()
+
+            # Calculate average training loss for this epoch
+            avg_train_loss = total_train_loss / len(train_loader)
+            train_losses.append(avg_train_loss)
+
+            # --- Testing (Validation) Step ---
+            # Call your test_model function to get the test loss
+            avg_test_loss = self.test_model(test_loader)
+            test_losses.append(avg_test_loss)
+
+            # Accumulate losses for averaging
+            train_loss_accumulator.append(avg_train_loss)
+            test_loss_accumulator.append(avg_test_loss)
+
+            # Check if we should broadcast (every broadcast_interval epochs or on the last epoch)
+            should_broadcast = (epoch + 1) % broadcast_interval == 0 or epoch == num_epochs - 1
+
+            if should_broadcast and train_loss_accumulator:
+                # Calculate averages over the interval
+                avg_train_interval = sum(train_loss_accumulator) / len(train_loss_accumulator)
+                avg_test_interval = sum(test_loss_accumulator) / len(test_loss_accumulator)
+
+                # Broadcast the averaged loss data
+                await broadcast_loss_internal(epoch + 1, avg_train_interval, avg_test_interval)
+
+                # Clear accumulators for next interval
+                train_loss_accumulator = []
+                test_loss_accumulator = []
+
+            # Print progress (less frequently to reduce output)
+            if (epoch + 1) % 10 == 0 or epoch == 0:
+                print(f"Epoch [{epoch+1:03d}/{num_epochs:03d}] | "
+                      f"Train Loss: {avg_train_loss:.4f} | "
+                      f"Test Loss: {avg_test_loss:.4f}")
+
+            # Small delay to allow WebSocket messages to be sent
+            await asyncio.sleep(0.01)
+
+        print("\nTraining Finished.")
+
         # Return the loss history
         return train_losses, test_losses
 
@@ -174,7 +240,7 @@ def create_dataset(dataset, feature, test_size = 0.2, batch_size = 32):
         batch_size=batch_size, 
         shuffle=False
     )
-    return (train_loader, test_loader, X.shape[1], scaler_y)
+    return (train_loader, test_loader, X.shape[1], scaler_y, scaler_X, cleaner)
 
 def create_ann(shape): 
     # --- B. Initialize and Run Workflow ---

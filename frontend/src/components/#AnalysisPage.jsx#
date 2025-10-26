@@ -1,15 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getApiUrl, API_CONFIG } from "../config";
-import { useTheme } from "../contexts/ThemeContext";
-import TrainingGraph from "./TrainingGraph";
-import DataVisualization from "./DataVisualization";
-import ChatBot from "./ChatBot";
 
 export default function AnalysisPage() {
-  const navigate = useNavigate();
+Fi  const navigate = useNavigate();
   const location = useLocation();
-  const { theme } = useTheme();
   const dataset = location.state?.dataset;
   
   const [analysisData, setAnalysisData] = useState(null);
@@ -21,16 +16,6 @@ export default function AnalysisPage() {
   const [trainingLoading, setTrainingLoading] = useState(false);
   const [trainingResult, setTrainingResult] = useState(null);
   const [trainingError, setTrainingError] = useState(null);
-  const [isTraining, setIsTraining] = useState(false);
-  const [modelInfo, setModelInfo] = useState(null);
-  const [predictionFormData, setPredictionFormData] = useState({});
-  const [predictionResult, setPredictionResult] = useState(null);
-  const [predictionLoading, setPredictionLoading] = useState(false);
-  const [predictionError, setPredictionError] = useState(null);
-  const [distributionData, setDistributionData] = useState(null);
-  const [distributionLoading, setDistributionLoading] = useState(false);
-  const [distributionError, setDistributionError] = useState(null);
-  const [shouldLoadChatbot, setShouldLoadChatbot] = useState(false);
 
   const handleBackToLibrary = () => {
     navigate("/");
@@ -86,7 +71,6 @@ export default function AnalysisPage() {
     setTrainingLoading(true);
     setTrainingError(null);
     setTrainingResult(null);
-    setIsTraining(true);
 
     try {
       const apiUrl = getApiUrl(API_CONFIG.ENDPOINTS.TRAIN);
@@ -97,20 +81,18 @@ export default function AnalysisPage() {
         predict_field: selectedAnalysis
       });
 
-      // Send parameters in request body as JSON
-      const requestBody = {
-        dataset_name: dataset.name,
-        num_epochs: epochs,
-        test_size: textSize,
+      // Pass parameters as query parameters to match FastAPI function signature
+      const params = new URLSearchParams({
+        num_epochs: epochs.toString(),
+        test_size: textSize.toString(),
         predict_field: selectedAnalysis
-      };
-
-      const response = await fetch(apiUrl, {
+      });
+      
+      const response = await fetch(`${apiUrl}?${params}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(requestBody),
       });
 
       console.log("Training response status:", response.status);
@@ -123,12 +105,17 @@ export default function AnalysisPage() {
       const data = await response.json();
       console.log("Training result:", data);
       setTrainingResult(data);
-
-      // Fetch model info immediately after training starts
+      
+      // Auto-scroll to prediction section after training completes
       setTimeout(() => {
-        fetchModelInfo();
-      }, 1000);
-
+        const predictionSection = document.getElementById('prediction-section');
+        if (predictionSection) {
+          predictionSection.scrollIntoView({ 
+            behavior: 'smooth',
+            block: 'start'
+          });
+        }
+      }, 500);
     } catch (err) {
       console.error("Error training model:", err);
       setTrainingError(err.message);
@@ -137,140 +124,15 @@ export default function AnalysisPage() {
     }
   };
 
-  // Handle training completion from WebSocket
-  const handleTrainingComplete = () => {
-    setIsTraining(false);
-    // Fetch model info after training completes
-    fetchModelInfo();
-  };
-
-  // Fetch model information
-  const fetchModelInfo = async () => {
-    try {
-      const apiUrl = getApiUrl(API_CONFIG.ENDPOINTS.MODEL_INFO);
-      const response = await fetch(apiUrl, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setModelInfo(data);
-
-        // Initialize prediction form data with empty values
-        const initialFormData = {};
-        if (data.fields) {
-          Object.keys(data.fields).forEach(fieldName => {
-            if (fieldName !== selectedAnalysis) { // Exclude the target field
-              initialFormData[fieldName] = '';
-            }
-          });
-        }
-        setPredictionFormData(initialFormData);
-      }
-    } catch (error) {
-      console.error("Error fetching model info:", error);
-    }
-  };
-
-  // Handle prediction form input changes
-  const handlePredictionInputChange = (fieldName, value) => {
-    setPredictionFormData(prev => ({
-      ...prev,
-      [fieldName]: value
-    }));
-  };
-
-  // Handle prediction submission
-  const handlePredict = async () => {
-    setPredictionLoading(true);
-    setPredictionError(null);
-    setPredictionResult(null);
-
-    try {
-      const apiUrl = getApiUrl(API_CONFIG.ENDPOINTS.PREDICT);
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          features: predictionFormData
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Prediction failed with status ${response.status}`);
-      }
-
-      const data = await response.json();
-      setPredictionResult(data);
-    } catch (err) {
-      console.error("Error making prediction:", err);
-      setPredictionError(err.message);
-    } finally {
-      setPredictionLoading(false);
-    }
-  };
-
-  // Fetch dataset distribution data
-  const fetchDistributionData = async () => {
-    if (!dataset) {
-      setDistributionError("No dataset selected");
-      return;
-    }
-
-    setDistributionLoading(true);
-    setDistributionError(null);
-
-    try {
-      const apiUrl = `${getApiUrl(API_CONFIG.ENDPOINTS.DATASET_DISTRIBUTION)}?dataset_name=${encodeURIComponent(dataset.name)}`;
-      console.log("Fetching distribution from:", apiUrl);
-
-      const response = await fetch(apiUrl, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Distribution analysis failed with status ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("Distribution data:", data);
-      setDistributionData(data);
-    } catch (err) {
-      console.error("Error fetching distribution:", err);
-      setDistributionError(err.message);
-    } finally {
-      setDistributionLoading(false);
-    }
-  };
-
-  // Fetch analysis and distribution data when component mounts
+  // Fetch analysis when component mounts
   useEffect(() => {
     fetchAnalysis();
-    fetchDistributionData();
   }, [dataset]);
 
-  // Lazy load chatbot after main content renders
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setShouldLoadChatbot(true);
-    }, 1000); // Load chatbot 1 second after page renders
-
-    return () => clearTimeout(timer);
-  }, []);
-
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: theme.background,
+    <div style={{ 
+      minHeight: "100vh", 
+      background: "linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)",
       padding: "0",
       position: "relative",
       overflow: "hidden"
@@ -399,7 +261,7 @@ export default function AnalysisPage() {
         {/* Dataset Info Section */}
         {dataset && (
           <div style={{
-            background: theme.surfaceLight,
+            background: "rgba(255, 255, 255, 0.95)",
             borderRadius: "24px",
             padding: "40px",
             boxShadow: "0 25px 50px rgba(0,0,0,0.15)",
@@ -457,16 +319,16 @@ export default function AnalysisPage() {
                 <h2 style={{ 
                   fontSize: "32px", 
                   fontWeight: "700", 
-                  color: theme.text,
+                  color: "#2d3748",
                   margin: "0 0 8px 0",
-                  background: theme.background,
+                  background: "linear-gradient(135deg, #667eea, #764ba2)",
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent"
                 }}>
                   {dataset.name}
                 </h2>
                 <p style={{
-                  color: theme.textLight,
+                  color: "#718096",
                   margin: "0 0 12px 0",
                   fontSize: "16px",
                   fontWeight: "400"
@@ -475,7 +337,7 @@ export default function AnalysisPage() {
                 </p>
                 <div style={{
                   display: "inline-block",
-                  background: theme.background,
+                  background: "linear-gradient(135deg, #667eea, #764ba2)",
                   color: "white",
                   padding: "8px 20px",
                   borderRadius: "20px",
@@ -494,7 +356,7 @@ export default function AnalysisPage() {
 
         {/* Analysis Section */}
         <div style={{
-          background: theme.surfaceLight,
+          background: "rgba(255, 255, 255, 0.95)",
           borderRadius: "24px",
           padding: "50px",
           boxShadow: "0 25px 50px rgba(0,0,0,0.15)",
@@ -506,9 +368,9 @@ export default function AnalysisPage() {
             <h2 style={{ 
               fontSize: "32px", 
               fontWeight: "700", 
-              color: theme.text,
+              color: "#2d3748",
               margin: "0 0 12px 0",
-              background: theme.background,
+              background: "linear-gradient(135deg, #667eea, #764ba2)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent"
             }}>
@@ -543,7 +405,7 @@ export default function AnalysisPage() {
               }}></div>
               <p style={{ 
                 marginTop: "24px", 
-                color: theme.textLight,
+                color: "#718096",
                 fontSize: "18px",
                 fontWeight: "500"
               }}>
@@ -599,7 +461,7 @@ export default function AnalysisPage() {
             }}>
               <h3 style={{ 
                 margin: "0 0 20px 0", 
-                color: theme.text, 
+                color: "#2d3748", 
                 fontSize: "20px", 
                 fontWeight: "600",
                 textAlign: "center"
@@ -628,7 +490,7 @@ export default function AnalysisPage() {
                     border: "2px solid #e2e8f0",
                     fontSize: "16px",
                     fontWeight: "500",
-                    color: theme.text,
+                    color: "#2d3748",
                     background: "white",
                     cursor: "pointer",
                     transition: "all 0.3s ease",
@@ -677,11 +539,11 @@ export default function AnalysisPage() {
                   <input
                     type="number"
                     min="1"
-                    max="200"
+                    max="100"
                     value={epochs}
                     onChange={(e) => {
                       const value = parseInt(e.target.value);
-                      if (value >= 1 && value <= 200) {
+                      if (value >= 1 && value <= 100) {
                         setEpochs(value);
                       }
                     }}
@@ -692,7 +554,7 @@ export default function AnalysisPage() {
                       border: "2px solid #e2e8f0",
                       fontSize: "16px",
                       fontWeight: "500",
-                      color: theme.text,
+                      color: "#2d3748",
                       background: "white",
                       transition: "all 0.3s ease",
                       boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
@@ -707,7 +569,7 @@ export default function AnalysisPage() {
                     }}
                   />
                   <div style={{
-                    background: theme.background,
+                    background: "linear-gradient(135deg, #667eea, #764ba2)",
                     color: "white",
                     padding: "8px 16px",
                     borderRadius: "20px",
@@ -721,10 +583,10 @@ export default function AnalysisPage() {
                   </div>
                   <div style={{
                     fontSize: "14px",
-                    color: theme.textLight,
+                    color: "#718096",
                     fontWeight: "500"
                   }}>
-                    (1-200)
+                    (1-100)
                   </div>
                 </div>
                 <div style={{
@@ -768,7 +630,7 @@ export default function AnalysisPage() {
                       border: "2px solid #e2e8f0",
                       fontSize: "16px",
                       fontWeight: "500",
-                      color: theme.text,
+                      color: "#2d3748",
                       background: "white",
                       transition: "all 0.3s ease",
                       boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
@@ -783,7 +645,7 @@ export default function AnalysisPage() {
                     }}
                   />
                   <div style={{
-                    background: theme.background,
+                    background: "linear-gradient(135deg, #667eea, #764ba2)",
                     color: "white",
                     padding: "8px 16px",
                     borderRadius: "20px",
@@ -797,7 +659,7 @@ export default function AnalysisPage() {
                   </div>
                   <div style={{
                     fontSize: "14px",
-                    color: theme.textLight,
+                    color: "#718096",
                     fontWeight: "500"
                   }}>
                     (0-0.3)
@@ -824,7 +686,7 @@ export default function AnalysisPage() {
                 }}>
                   <h4 style={{
                     margin: "0 0 12px 0",
-                    color: theme.text,
+                    color: "#2d3748",
                     fontSize: "18px",
                     fontWeight: "600"
                   }}>
@@ -832,7 +694,7 @@ export default function AnalysisPage() {
                   </h4>
                   <p style={{
                     margin: "0 0 8px 0",
-                    color: theme.textLight,
+                    color: "#718096",
                     fontSize: "14px",
                     lineHeight: "1.5"
                   }}>
@@ -840,7 +702,7 @@ export default function AnalysisPage() {
                   </p>
                   <p style={{
                     margin: "0 0 8px 0",
-                    color: theme.textLight,
+                    color: "#718096",
                     fontSize: "14px",
                     lineHeight: "1.5"
                   }}>
@@ -848,7 +710,7 @@ export default function AnalysisPage() {
                   </p>
                   <p style={{
                     margin: "0 0 16px 0",
-                    color: theme.textLight,
+                    color: "#718096",
                     fontSize: "14px",
                     lineHeight: "1.5"
                   }}>
@@ -856,7 +718,7 @@ export default function AnalysisPage() {
                   </p>
                   <p style={{
                     margin: 0,
-                    color: theme.textLight,
+                    color: "#718096",
                     fontSize: "14px",
                     lineHeight: "1.5"
                   }}>
@@ -898,30 +760,8 @@ export default function AnalysisPage() {
                 </div>
               )}
 
-              {/* Training Active State - Show Graph */}
-              {isTraining && (
-                <div style={{
-                  marginTop: "30px",
-                  padding: "30px",
-                  borderRadius: "16px",
-                  background: "#f0fff4",
-                  border: "1px solid #9ae6b4"
-                }}>
-                  <h3 style={{ margin: "0 0 20px 0", color: "#22543d", fontSize: "18px", fontWeight: "600", textAlign: "center" }}>
-                    🔄 Training in Progress - Real-Time Loss Visualization
-                  </h3>
-                  <div style={{ minHeight: "400px" }}>
-                    <TrainingGraph
-                      websocketUrl={API_CONFIG.BASE_URL}
-                      isTraining={isTraining}
-                      onTrainingComplete={handleTrainingComplete}
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* Training Loading State */}
-              {trainingLoading && !isTraining && (
+              {trainingLoading && (
                 <div style={{
                   marginTop: "30px",
                   padding: "30px",
@@ -940,10 +780,10 @@ export default function AnalysisPage() {
                     margin: "0 auto 16px auto"
                   }}></div>
                   <h3 style={{ margin: "0 0 8px 0", color: "#c05621", fontSize: "18px", fontWeight: "600" }}>
-                    🔄 Starting Training
+                    🔄 Training Model
                   </h3>
                   <p style={{ margin: 0, color: "#c05621", fontSize: "14px" }}>
-                    Initializing model training with your parameters...
+                    Please wait while the model is being trained with your parameters...
                   </p>
                 </div>
               )}
@@ -1029,7 +869,7 @@ export default function AnalysisPage() {
                 <summary style={{
                   cursor: "pointer",
                   fontSize: "14px",
-                  color: theme.textLight,
+                  color: "#718096",
                   fontWeight: "500",
                   padding: "8px 0"
                 }}>
@@ -1074,7 +914,7 @@ export default function AnalysisPage() {
               </h3>
               <p style={{ 
                 margin: "0 0 20px 0", 
-                color: theme.textLight,
+                color: "#718096",
                 fontSize: "16px",
                 fontWeight: "400"
               }}>
@@ -1138,7 +978,7 @@ export default function AnalysisPage() {
           <button
             onClick={handleBackToLibrary}
             style={{
-              background: theme.background,
+              background: "linear-gradient(135deg, #667eea, #764ba2)",
               color: "white",
               border: "none",
               borderRadius: "16px",
@@ -1169,7 +1009,7 @@ export default function AnalysisPage() {
           <div id="prediction-section" style={{
             marginTop: "60px",
             padding: "50px 20px",
-            background: theme.surfaceLight,
+            background: "rgba(255, 255, 255, 0.95)",
             borderRadius: "24px",
             boxShadow: "0 25px 50px rgba(0,0,0,0.15)",
             backdropFilter: "blur(10px)",
@@ -1179,16 +1019,16 @@ export default function AnalysisPage() {
               <h2 style={{ 
                 fontSize: "32px", 
                 fontWeight: "700", 
-                color: theme.text,
+                color: "#2d3748",
                 margin: "0 0 12px 0",
-                background: theme.background,
+                background: "linear-gradient(135deg, #667eea, #764ba2)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent"
               }}>
                 🔮 Model Predictions
               </h2>
               <p style={{ 
-                color: theme.textLight, 
+                color: "#718096", 
                 margin: 0,
                 fontSize: "18px",
                 fontWeight: "400"
@@ -1203,16 +1043,45 @@ export default function AnalysisPage() {
               gap: "40px",
               alignItems: "start"
             }}>
-              {/* Left Side - Training Graph */}
-              <div style={{ minHeight: "400px" }}>
-                <TrainingGraph
-                  websocketUrl={API_CONFIG.BASE_URL}
-                  isTraining={isTraining}
-                  onTrainingComplete={handleTrainingComplete}
-                />
+              {/* Left Side - Graph Placeholder */}
+              <div style={{
+                background: "linear-gradient(135deg, #f7fafc, #edf2f7)",
+                borderRadius: "20px",
+                padding: "40px",
+                border: "2px dashed #cbd5e0",
+                textAlign: "center",
+                minHeight: "400px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center"
+              }}>
+                <div style={{
+                  fontSize: "80px",
+                  marginBottom: "20px",
+                  opacity: 0.6
+                }}>
+                  📊
+                </div>
+                <h3 style={{
+                  fontSize: "24px",
+                  fontWeight: "600",
+                  color: "#4a5568",
+                  margin: "0 0 12px 0"
+                }}>
+                  Prediction Graph
+                </h3>
+                <p style={{
+                  color: "#718096",
+                  fontSize: "16px",
+                  margin: 0,
+                  lineHeight: "1.5"
+                }}>
+                  Results will be displayed here after running predictions
+                </p>
               </div>
 
-              {/* Right Side - Dynamic Prediction Form */}
+              {/* Right Side - Analysis Type Dropdowns */}
               <div style={{
                 background: "rgba(255,255,255,0.8)",
                 borderRadius: "20px",
@@ -1222,387 +1091,160 @@ export default function AnalysisPage() {
                 <h3 style={{
                   fontSize: "20px",
                   fontWeight: "600",
-                  color: theme.text,
+                  color: "#2d3748",
                   margin: "0 0 24px 0",
                   textAlign: "center"
                 }}>
-                  🔮 Make Prediction
+                  📊 Analysis Options
                 </h3>
 
-                {modelInfo && modelInfo.model_trained ? (
-                  <>
-                    {/* Dynamic Form Fields */}
-                    {Object.entries(modelInfo.fields)
-                      .filter(([fieldName]) => fieldName !== selectedAnalysis) // Exclude target field
-                      .map(([fieldName, fieldInfo]) => (
-                        <div key={fieldName} style={{ marginBottom: "16px" }}>
-                          <label style={{
-                            display: "block",
-                            marginBottom: "8px",
-                            fontSize: "14px",
-                            fontWeight: "600",
-                            color: "#4a5568",
-                            textTransform: "capitalize"
-                          }}>
-                            {fieldName.replace(/_/g, ' ')}:
-                          </label>
-
-                          {fieldInfo.type === 'categorical' ? (
-                            // Dropdown for categorical fields
-                            <select
-                              value={predictionFormData[fieldName] || ''}
-                              onChange={(e) => handlePredictionInputChange(fieldName, e.target.value)}
-                              style={{
-                                width: "100%",
-                                padding: "12px 16px",
-                                borderRadius: "12px",
-                                border: "2px solid #e2e8f0",
-                                fontSize: "16px",
-                                fontWeight: "500",
-                                color: theme.text,
-                                background: "white",
-                                cursor: "pointer",
-                                transition: "all 0.3s ease",
-                                boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-                              }}
-                              onFocus={(e) => {
-                                e.target.style.borderColor = "#667eea";
-                                e.target.style.boxShadow = "0 4px 15px rgba(102, 126, 234, 0.2)";
-                              }}
-                              onBlur={(e) => {
-                                e.target.style.borderColor = "#e2e8f0";
-                                e.target.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
-                              }}
-                            >
-                              <option value="" disabled>
-                                Select {fieldName.replace(/_/g, ' ')}...
-                              </option>
-                              {fieldInfo.options.map((option, idx) => (
-                                <option key={idx} value={option}>
-                                  {option}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            // Number input for numeric fields
-                            <input
-                              type="number"
-                              step="any"
-                              value={predictionFormData[fieldName] || ''}
-                              onChange={(e) => handlePredictionInputChange(fieldName, e.target.value)}
-                              placeholder={`Enter ${fieldName.replace(/_/g, ' ')}`}
-                              style={{
-                                width: "100%",
-                                padding: "12px 16px",
-                                borderRadius: "12px",
-                                border: "2px solid #e2e8f0",
-                                fontSize: "16px",
-                                fontWeight: "500",
-                                color: theme.text,
-                                background: "white",
-                                transition: "all 0.3s ease",
-                                boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-                              }}
-                              onFocus={(e) => {
-                                e.target.style.borderColor = "#667eea";
-                                e.target.style.boxShadow = "0 4px 15px rgba(102, 126, 234, 0.2)";
-                              }}
-                              onBlur={(e) => {
-                                e.target.style.borderColor = "#e2e8f0";
-                                e.target.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
-                              }}
-                            />
-                          )}
-                        </div>
-                      ))}
-
-                    {/* Selected Analysis Type Display */}
-                    <div style={{
-                      marginTop: "24px",
-                      marginBottom: "24px",
-                      padding: "16px",
-                      background: theme.background,
-                      borderRadius: "12px",
-                      color: "white"
+                {/* Analysis Type Dropdowns */}
+                {Array.isArray(analysisData?.headers) ? analysisData.headers
+                  .filter(option => option !== selectedAnalysis)
+                  .map((option, index) => (
+                  <div key={index} style={{ marginBottom: "16px" }}>
+                    <label style={{
+                      display: "block",
+                      marginBottom: "8px",
+                      fontSize: "14px",
+                      fontWeight: "600",
+                      color: "#4a5568"
                     }}>
-                      <div style={{
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        marginBottom: "8px",
-                        opacity: 0.9
-                      }}>
-                        Predicting:
-                      </div>
-                      <div style={{
-                        fontSize: "18px",
-                        fontWeight: "700"
-                      }}>
-                        {selectedAnalysis}
-                      </div>
-                    </div>
-
-                    {/* Predict Button */}
-                    <button
-                      onClick={handlePredict}
-                      disabled={predictionLoading || Object.values(predictionFormData).some(v => v === '')}
+                      {option}:
+                    </label>
+                    <select
                       style={{
                         width: "100%",
-                        background: predictionLoading || Object.values(predictionFormData).some(v => v === '')
-                          ? "#e2e8f0"
-                          : "linear-gradient(135deg, #667eea, #764ba2)",
-                        color: predictionLoading || Object.values(predictionFormData).some(v => v === '')
-                          ? "#a0aec0"
-                          : "white",
-                        border: "none",
-                        borderRadius: "16px",
-                        padding: "16px 24px",
-                        fontSize: "18px",
-                        fontWeight: "700",
-                        cursor: predictionLoading || Object.values(predictionFormData).some(v => v === '')
-                          ? "not-allowed"
-                          : "pointer",
+                        padding: "12px 16px",
+                        borderRadius: "12px",
+                        border: "2px solid #e2e8f0",
+                        fontSize: "16px",
+                        fontWeight: "500",
+                        color: "#2d3748",
+                        background: "white",
+                        cursor: "pointer",
                         transition: "all 0.3s ease",
-                        boxShadow: predictionLoading || Object.values(predictionFormData).some(v => v === '')
-                          ? "none"
-                          : "0 8px 25px rgba(102, 126, 234, 0.4)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px"
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
                       }}
-                      onMouseEnter={(e) => {
-                        if (!predictionLoading && !Object.values(predictionFormData).some(v => v === '')) {
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                          e.currentTarget.style.boxShadow = "0 12px 35px rgba(102, 126, 234, 0.5)";
-                        }
+                      onFocus={(e) => {
+                        e.target.style.borderColor = "#667eea";
+                        e.target.style.boxShadow = "0 4px 15px rgba(102, 126, 234, 0.2)";
                       }}
-                      onMouseLeave={(e) => {
-                        if (!predictionLoading && !Object.values(predictionFormData).some(v => v === '')) {
-                          e.currentTarget.style.transform = "translateY(0)";
-                          e.currentTarget.style.boxShadow = "0 8px 25px rgba(102, 126, 234, 0.4)";
-                        }
+                      onBlur={(e) => {
+                        e.target.style.borderColor = "#e2e8f0";
+                        e.target.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
                       }}
                     >
-                      {predictionLoading ? "🔄 Predicting..." : "🔮 Predict"}
-                    </button>
-
-                    {/* Prediction Results */}
-                    {predictionResult && (
-                      <div style={{
-                        marginTop: "24px",
-                        padding: "20px",
-                        background: "#f0fff4",
-                        borderRadius: "12px",
-                        border: "1px solid #9ae6b4"
-                      }}>
-                        <h4 style={{
-                          margin: "0 0 12px 0",
-                          fontSize: "18px",
-                          fontWeight: "600",
-                          color: "#22543d"
-                        }}>
-                          ✅ Prediction Result
-                        </h4>
-                        <div style={{
-                          fontSize: "24px",
-                          fontWeight: "700",
-                          color: "#22543d",
-                          marginBottom: "8px"
-                        }}>
-                          {selectedAnalysis}: {predictionResult.prediction.toFixed(4)}
-                        </div>
-                        <p style={{
-                          margin: 0,
-                          fontSize: "14px",
-                          color: "#22543d",
-                          opacity: 0.8
-                        }}>
-                          Based on the provided feature values
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Prediction Error */}
-                    {predictionError && (
-                      <div style={{
-                        marginTop: "24px",
-                        padding: "20px",
-                        background: "#fed7d7",
-                        borderRadius: "12px",
-                        border: "1px solid #feb2b2"
-                      }}>
-                        <h4 style={{
-                          margin: "0 0 8px 0",
-                          fontSize: "16px",
-                          fontWeight: "600",
-                          color: "#c53030"
-                        }}>
-                          ❌ Prediction Error
-                        </h4>
-                        <p style={{
-                          margin: 0,
-                          fontSize: "14px",
-                          color: "#c53030"
-                        }}>
-                          {predictionError}
-                        </p>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div style={{
-                    textAlign: "center",
-                    padding: "40px 20px",
-                    color: "#718096"
-                  }}>
-                    <div style={{ fontSize: "48px", marginBottom: "16px" }}>🤖</div>
-                    <h4 style={{
-                      fontSize: "18px",
+                      <option value="" disabled>
+                        Select {option}...
+                      </option>
+                      {/* You can add specific options for each analysis type here */}
+                      <option value="option1">Option 1</option>
+                      <option value="option2">Option 2</option>
+                      <option value="option3">Option 3</option>
+                    </select>
+                  </div>
+                )) : (
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{
+                      display: "block",
+                      marginBottom: "8px",
+                      fontSize: "14px",
                       fontWeight: "600",
-                      margin: "0 0 8px 0"
+                      color: "#4a5568"
                     }}>
-                      No Trained Model
-                    </h4>
-                    <p style={{
-                      margin: 0,
-                      fontSize: "14px"
-                    }}>
-                      Train a model first to make predictions
-                    </p>
+                      Analysis Type:
+                    </label>
+                    <select
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        borderRadius: "12px",
+                        border: "2px solid #e2e8f0",
+                        fontSize: "16px",
+                        fontWeight: "500",
+                        color: "#2d3748",
+                        background: "white",
+                        cursor: "pointer",
+                        transition: "all 0.3s ease",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = "#667eea";
+                        e.target.style.boxShadow = "0 4px 15px rgba(102, 126, 234, 0.2)";
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = "#e2e8f0";
+                        e.target.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
+                      }}
+                    >
+                      <option value="" disabled>
+                        Select analysis type...
+                      </option>
+                      <option value="option1">Option 1</option>
+                      <option value="option2">Option 2</option>
+                      <option value="option3">Option 3</option>
+                    </select>
                   </div>
                 )}
+
+                {/* Selected Analysis Type Display */}
+                <div style={{ 
+                  marginTop: "24px", 
+                  marginBottom: "24px",
+                  padding: "16px",
+                  background: "linear-gradient(135deg, #667eea, #764ba2)",
+                  borderRadius: "12px",
+                  color: "white"
+                }}>
+                  <div style={{
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    marginBottom: "8px",
+                    opacity: 0.9
+                  }}>
+                    Selected Analysis Type:
+                  </div>
+                  <div style={{
+                    fontSize: "18px",
+                    fontWeight: "700"
+                  }}>
+                    {selectedAnalysis}
+                  </div>
+                </div>
+
+                {/* Predict Button */}
+                <button
+                  style={{
+                    width: "100%",
+                    background: "linear-gradient(135deg, #667eea, #764ba2)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "16px",
+                    padding: "16px 24px",
+                    fontSize: "18px",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                    transition: "all 0.3s ease",
+                    boxShadow: "0 8px 25px rgba(102, 126, 234, 0.4)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                    e.currentTarget.style.boxShadow = "0 12px 35px rgba(102, 126, 234, 0.5)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "0 8px 25px rgba(102, 126, 234, 0.4)";
+                  }}
+                >
+                  🔮 Predict
+                </button>
               </div>
             </div>
           </div>
         )}
-
-        {/* Dataset Distribution Section */}
-        <div style={{
-          background: theme.surfaceLight,
-          borderRadius: "24px",
-          padding: "50px",
-          boxShadow: "0 25px 50px rgba(0,0,0,0.15)",
-          backdropFilter: "blur(10px)",
-          border: "1px solid rgba(255,255,255,0.3)",
-          marginTop: "40px"
-        }}>
-          <div style={{ marginBottom: "40px", textAlign: "center" }}>
-            <h2 style={{
-              fontSize: "32px",
-              fontWeight: "700",
-              color: theme.text,
-              margin: "0 0 12px 0",
-              background: theme.background,
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent"
-            }}>
-              📊 Dataset Distribution
-            </h2>
-            <p style={{
-              color: "#718096",
-              margin: 0,
-              fontSize: "18px",
-              fontWeight: "400"
-            }}>
-              Statistical analysis and data visualization
-            </p>
-          </div>
-
-          {/* Distribution Visualization and ChatBot Split Layout */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "40px",
-            alignItems: "start"
-          }}>
-            {/* Left Side - Distribution Visualization */}
-            <div>
-              <DataVisualization
-                distributionData={distributionData}
-                isLoading={distributionLoading}
-              />
-            </div>
-
-            {/* Right Side - Distribution ChatBot - Lazy Loaded */}
-            <div>
-              {shouldLoadChatbot ? (
-                <ChatBot
-                  distributionData={distributionData}
-                />
-              ) : (
-                <div style={{
-                  background: 'white',
-                  borderRadius: '20px',
-                  boxShadow: '0 8px 25px rgba(0,0,0,0.1)',
-                  border: '1px solid rgba(102, 126, 234, 0.2)',
-                  height: '200px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#718096'
-                }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{
-                      width: '40px',
-                      height: '40px',
-                      border: '4px solid #e2e8f0',
-                      borderTop: '4px solid #667eea',
-                      borderRadius: '50%',
-                      animation: 'spin 1s linear infinite',
-                      margin: '0 auto 16px auto'
-                    }}></div>
-                    <h4 style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      margin: '0 0 8px 0'
-                    }}>
-                      Loading Distribution Assistant
-                    </h4>
-                    <p style={{
-                      margin: 0,
-                      fontSize: '14px'
-                    }}>
-                      Preparing your AI-powered statistical advisor...
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Distribution Error State */}
-          {distributionError && (
-            <div style={{
-              padding: "30px",
-              borderRadius: "16px",
-              background: "#fed7d7",
-              color: "#c53030",
-              border: "1px solid #feb2b2",
-              marginTop: "20px",
-              textAlign: "center"
-            }}>
-              <h3 style={{ margin: "0 0 12px 0", fontSize: "18px", fontWeight: "600" }}>
-                ❌ Distribution Analysis Failed
-              </h3>
-              <p style={{ margin: "0 0 16px 0", fontSize: "16px" }}>
-                {distributionError}
-              </p>
-              <button
-                onClick={fetchDistributionData}
-                style={{
-                  background: "#c53030",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "8px 16px",
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  cursor: "pointer"
-                }}
-              >
-                🔄 Retry Analysis
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
       <style jsx>{`

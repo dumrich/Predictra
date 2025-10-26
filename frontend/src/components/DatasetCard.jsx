@@ -2,10 +2,9 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getApiUrl } from "../config";
 
-export default function DatasetCard({ dataset, onSelect }) {
+export default function DatasetCard({ dataset, theme, onSelect }) {
   const navigate = useNavigate();
   const [imageError, setImageError] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
 
   const handleAnalyze = (e) => {
     e.stopPropagation();
@@ -14,157 +13,160 @@ export default function DatasetCard({ dataset, onSelect }) {
   };
 
   return (
-    <div
-      style={{
-        background: "white",
-        borderRadius: "16px",
-        padding: "0",
-        overflow: "hidden",
-        boxShadow: "0 8px 30px rgba(0,0,0,0.12)",
-        transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
-        cursor: "pointer",
-        border: "1px solid rgba(255,255,255,0.2)",
-        position: "relative",
-        transform: isHovered ? "translateY(-8px) scale(1.02)" : "translateY(0) scale(1)"
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={() => onSelect(dataset)}
-    >
-      {/* Image Section */}
+    <>
+      {/* Thumbnail/Preview */}
       <div style={{
-        height: "200px",
-        background: "linear-gradient(135deg, #667eea, #764ba2, #f093fb)",
+        width: "100%",
+        height: "140px",
+        background: `${theme.primary}10`,
+        borderRadius: "12px",
+        marginBottom: "16px",
         position: "relative",
-        overflow: "hidden"
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
       }}>
-        {!imageError && dataset.thumbnail ? (
+        {dataset.thumbnail && !imageError ? (
           <img
             src={getApiUrl(dataset.thumbnail)}
             alt={dataset.name}
             style={{
               width: "100%",
               height: "100%",
-              objectFit: "cover",
+              objectFit: "cover"
             }}
             onError={() => setImageError(true)}
           />
         ) : (
           <div style={{
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
-            justifyContent: "center",
-            height: "100%",
-            fontSize: "64px",
-            color: "rgba(255,255,255,0.9)",
-            textShadow: "0 4px 20px rgba(0,0,0,0.3)"
+            gap: "8px"
           }}>
-            📊
+            <div style={{
+              fontSize: "48px",
+              opacity: 0.6
+            }}>
+              📊
+            </div>
+            <div style={{
+              fontSize: "12px",
+              color: theme.textMuted,
+              fontWeight: "500"
+            }}>
+              Data Preview
+            </div>
           </div>
         )}
-        
-        {/* Overlay */}
+
+        {/* File Format Badge */}
         <div style={{
           position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "linear-gradient(135deg, rgba(102, 126, 234, 0.8), rgba(118, 75, 162, 0.8))",
-          opacity: 0,
-          transition: "opacity 0.3s ease",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center"
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.opacity = "1";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.opacity = "0";
-        }}
-        >
-          <div style={{
-            background: "rgba(255,255,255,0.9)",
-            color: "#4a5568",
-            padding: "8px 16px",
-            borderRadius: "20px",
-            fontSize: "14px",
-            fontWeight: "600"
-          }}>
-            Click to use
-          </div>
+          top: "8px",
+          right: "8px",
+          padding: "4px 8px",
+          background: theme.background,
+          color: "white",
+          borderRadius: "6px",
+          fontSize: "10px",
+          fontWeight: "600",
+          textTransform: "uppercase",
+          letterSpacing: "0.5px"
+        }}>
+          CSV
         </div>
       </div>
 
-      {/* Content Section */}
-      <div style={{ padding: "20px" }}>
-        <h3 style={{ 
-          margin: "0 0 8px 0", 
+      {/* Content */}
+      <div>
+        <h3 style={{
           fontSize: "18px",
-          fontWeight: "600",
-          color: "#2d3748",
+          fontWeight: "700",
+          color: theme.text,
+          margin: "0 0 8px 0",
+          lineHeight: "1.3"
+        }}>
+          {dataset.name || "Unknown Dataset"}
+        </h3>
+
+        <p style={{
+          fontSize: "13px",
+          color: theme.textMuted,
+          margin: "0 0 16px 0",
           lineHeight: "1.4"
         }}>
-          {dataset.name}
-        </h3>
-        
-        {dataset.description && (
-          <p style={{
-            margin: "0 0 16px 0",
-            fontSize: "14px",
-            color: "#718096",
-            lineHeight: "1.5",
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden"
-          }}>
-            {dataset.description}
-          </p>
-        )}
+          {dataset.csv_file || "No filename available"}
+        </p>
 
+        {/* Stats */}
         <div style={{
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: "16px"
+          gap: "12px",
+          marginBottom: "16px"
         }}>
           <div style={{
-            background: "#f7fafc",
-            color: "#4a5568",
-            padding: "4px 12px",
-            borderRadius: "12px",
-            fontSize: "12px",
-            fontWeight: "500"
+            background: theme.surfaceDark,
+            borderRadius: "8px",
+            padding: "6px 10px",
+            fontSize: "11px",
+            fontWeight: "600",
+            color: theme.textMuted,
+            textAlign: "center",
+            flex: 1
           }}>
-            CSV Dataset
+            <div style={{ color: theme.primary, fontWeight: "700", fontSize: "14px" }}>
+              📈
+            </div>
+            <div>Ready</div>
           </div>
-          
-          <button
-            onClick={handleAnalyze}
-            style={{
-              background: "linear-gradient(135deg, #667eea, #764ba2)",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              padding: "8px 16px",
-              fontSize: "14px",
-              fontWeight: "600",
-              cursor: "pointer",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "scale(1.05)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "scale(1)";
-            }}
-          >
-            🚀 Analyze
-          </button>
+          <div style={{
+            background: theme.surfaceDark,
+            borderRadius: "8px",
+            padding: "6px 10px",
+            fontSize: "11px",
+            fontWeight: "600",
+            color: theme.textMuted,
+            textAlign: "center",
+            flex: 1
+          }}>
+            <div style={{ color: theme.accent, fontWeight: "700", fontSize: "14px" }}>
+              🎯
+            </div>
+            <div>Analysis</div>
+          </div>
         </div>
+
+        {/* Action Button */}
+        <button
+          onClick={handleAnalyze}
+          style={{
+            width: "100%",
+            padding: "12px 16px",
+            background: theme.background,
+            color: "white",
+            border: "none",
+            borderRadius: "10px",
+            fontSize: "13px",
+            fontWeight: "600",
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px"
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-1px)";
+            e.currentTarget.style.boxShadow = "0 6px 20px rgba(0,0,0,0.15)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.boxShadow = "none";
+          }}
+        >
+          🚀 Analyze Data
+        </button>
       </div>
-    </div>
+    </>
   );
 }
