@@ -1,10 +1,12 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles  # Add this import
 import os
 import subprocess
 import json
+import csv
+import asyncio
 from typing import List, Dict, Any
 from util.csvCleaner import CSVCleaner
 
@@ -140,7 +142,8 @@ async def root():
             "get_library_info": "/libraries/{library_name}",
             "upload_dataset": "/upload",
             "analyze_dataset": "/analyze",
-            "rescan": "/rescan"
+            "rescan": "/rescan",
+            "stream_csv": "/stream/{library_name}"
         }
     }
 
@@ -308,7 +311,7 @@ async def analyze_dataset(dataset_name: str):
     try:
         
         # Construct the full path to the CSV file
-        csv_filename = f"../datasets/{dataset_name}.csv"
+        csv_filename = f"{dataset_name}.csv"
         file_path = os.path.join(DATASETS_FOLDER, csv_filename)
         
         # Check if the file exists
@@ -353,3 +356,36 @@ async def rescan_libraries():
         "libraries_found": len(library_catalog),
         "libraries": list(library_catalog.values())
     }
+
+
+# ==================== NEW: REAL-TIME CSV STREAMING ====================
+
+@app.websocket("/stream/{library_name}")
+async def stream_data(websocket: WebSocket, library_name: str):
+    """
+    WebSocket endpoint that streams CSV data row by row.
+    Frontend connects here to receive live updates for graphing.
+    """
+    await websocket.accept()
+    csv_path = os.path.join(DATASETS_FOLDER, f"{library_name}.csv")
+
+    if not os.path.exists(csv_path):
+        await websocket.send_json({"error": f"CSV '{library_name}' not found"})
+        await websocket.close()
+        return
+
+    try:
+        with open(csv_path, "r", encoding="utf-8") as csvfile:
+            reader = csv.DictReader(csvfile)
+
+            for row in reader:
+                # Send each row to frontend as JSON
+                await websocket.send_json(row)
+                await asyncio.sleep(0.5)  # simulate live streaming delay
+
+        await websocket.send_json({"message": "Stream complete"})
+        await websocket.close()
+
+    except Exception as e:
+        await websocket.send_json({"error": str(e)})
+        await websocket.close()
