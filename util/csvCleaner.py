@@ -77,7 +77,7 @@ class CSVCleaner:
 
 
 def main():
-    cleaner = CSVCleaner("Housing.csv")
+    cleaner = CSVCleaner("../datasets/housing.csv")
     cleaner.load_csv()
     print(f"CSV File: {cleaner.filename}")
     print(f"Columns: {cleaner.header}")

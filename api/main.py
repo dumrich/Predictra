@@ -364,6 +364,10 @@ async def train_model(num_epochs: int, test_size: float, predict_field: str):
     print(f"  Predict Field: {predict_field}")
     print("="*50)
     
+    """
+    {'mainroad': {'yes': 0.0, 'no': 1.0}, 'guestroom': {'no': 0.0, 'yes': 1.0}, 'basement': {'no': 0.0, 'yes': 1.0}, 'hotwaterheating': {'no': 0.0, 'yes': 1.0}, 'airconditioning': {'yes': 0.0, 'no': 1.0}, 'prefarea': {'yes': 0.0, 'no': 1.0}, 'furnishingstatus': {'furnished': 0.0, 'semi-furnished': 1.0, 'unfurnished': 2.0}}
+    """
+    
     return {
         "success": True,
         "message": "Model training skeleton executed",
